@@ -1,0 +1,2 @@
+source D:/ZIP/esp32-bt-hid-bridge/build/gdbinit/symbols
+source D:/ZIP/esp32-bt-hid-bridge/build/gdbinit/connect

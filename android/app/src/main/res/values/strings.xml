@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ESP Text HID</string>
+    <string name="hint_text">要打到电脑光标处的文字（UTF-8）</string>
+    <string name="connect">连接</string>
+    <string name="disconnect">断开</string>
+    <string name="send">发送并输入</string>
+    <string name="abort">中止</string>
+    <string name="refresh">刷新已配对设备</string>
+    <string name="status_idle">未连接 · 先配对 ESP-TEXT-KB（PIN 1234）</string>
+</resources>

@@ -1,0 +1,2 @@
+source D:/ZIP/esp32-bt-hid-bridge/build/bootloader/gdbinit/symbols
+source D:/ZIP/esp32-bt-hid-bridge/build/bootloader/gdbinit/connect
