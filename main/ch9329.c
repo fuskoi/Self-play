@@ -11,11 +11,15 @@
 
 static const char *TAG = "ch9329";
 
-#define CH9329_HEAD0 0x57
-#define CH9329_HEAD1 0xAB
-#define CH9329_ADDR  0x00
-#define CMD_GET_INFO 0x01
-#define CMD_SEND_KB  0x02
+#define CH9329_HEAD0     0x57
+#define CH9329_HEAD1     0xAB
+#define CH9329_ADDR      0x00
+#define CMD_GET_INFO     0x01
+#define CMD_SEND_KB      0x02
+#define CMD_GET_PARA_CFG 0x08
+#define CMD_SET_PARA_CFG 0x09
+#define CMD_RESET        0x0F
+#define PARA_LEN         50
 
 #define HID_MOD_LALT 0x04
 #define HID_KP_1     0x59
@@ -23,16 +27,16 @@ static const char *TAG = "ch9329";
 
 static int s_baud = CH9329_BAUD;
 static bool s_chip_ok;
+static bool s_ascii_mode;
 
 static uint8_t ascii_to_hid(char c, uint8_t *modifier)
 {
     *modifier = 0;
-
     if (c >= 'a' && c <= 'z') {
         return (uint8_t)(0x04 + (c - 'a'));
     }
     if (c >= 'A' && c <= 'Z') {
-        *modifier = 0x02; /* Left Shift */
+        *modifier = 0x02;
         return (uint8_t)(0x04 + (c - 'A'));
     }
     if (c >= '1' && c <= '9') {
@@ -41,11 +45,10 @@ static uint8_t ascii_to_hid(char c, uint8_t *modifier)
     if (c == '0') {
         return 0x27;
     }
-
     switch (c) {
     case '\n':
     case '\r':
-        return 0x28; /* Enter */
+        return 0x28;
     case '\t':
         return 0x2B;
     case ' ':
@@ -179,27 +182,43 @@ static esp_err_t ch9329_send_packet(uint8_t cmd, const uint8_t *data, uint8_t le
     return (n == (int)i) ? ESP_OK : ESP_FAIL;
 }
 
+static int ch9329_read_reply(uint8_t expect_cmd, uint8_t *data, int data_cap, int timeout_ms)
+{
+    uint8_t buf[80];
+    int n = uart_read_bytes(CH9329_UART_NUM, buf, sizeof(buf), pdMS_TO_TICKS(timeout_ms));
+    if (n < 6) {
+        return -1;
+    }
+    for (int i = 0; i + 5 < n; ++i) {
+        if (buf[i] != CH9329_HEAD0 || buf[i + 1] != CH9329_HEAD1) {
+            continue;
+        }
+        if (buf[i + 3] != expect_cmd) {
+            continue;
+        }
+        int len = buf[i + 4];
+        if (i + 5 + len >= n) {
+            return -1;
+        }
+        if (len > data_cap) {
+            len = data_cap;
+        }
+        if (data && len > 0) {
+            memcpy(data, &buf[i + 5], len);
+        }
+        return len;
+    }
+    return -1;
+}
+
 static bool ch9329_probe(void)
 {
     uart_flush_input(CH9329_UART_NUM);
     if (ch9329_send_packet(CMD_GET_INFO, NULL, 0) != ESP_OK) {
         return false;
     }
-
-    uint8_t buf[32];
-    int n = uart_read_bytes(CH9329_UART_NUM, buf, sizeof(buf), pdMS_TO_TICKS(150));
-    if (n < 5) {
-        return false;
-    }
-
-    for (int i = 0; i + 4 < n; ++i) {
-        if (buf[i] == CH9329_HEAD0 && buf[i + 1] == CH9329_HEAD1 && buf[i + 3] == 0x81) {
-            ESP_LOGI(TAG, "probe OK, got %d bytes reply", n);
-            return true;
-        }
-    }
-    ESP_LOGW(TAG, "probe: unexpected reply (%d bytes)", n);
-    return false;
+    uint8_t data[16];
+    return ch9329_read_reply(0x81, data, sizeof(data), 150) > 0;
 }
 
 static esp_err_t ch9329_send_report(const uint8_t report[8])
@@ -208,7 +227,7 @@ static esp_err_t ch9329_send_report(const uint8_t report[8])
     if (err != ESP_OK) {
         return err;
     }
-    vTaskDelay(pdMS_TO_TICKS(CH9329_CHAR_DELAY_MS));
+    vTaskDelay(pdMS_TO_TICKS(CH9329_ALT_GAP_MS));
     return ESP_OK;
 }
 
@@ -221,7 +240,6 @@ static esp_err_t ch9329_send_key(uint8_t modifier, uint8_t keycode)
     if (err != ESP_OK) {
         return err;
     }
-
     memset(report, 0, sizeof(report));
     return ch9329_send_report(report);
 }
@@ -231,7 +249,6 @@ static size_t utf8_decode(const uint8_t *data, size_t len, uint32_t *out_cp)
     if (len == 0) {
         return 0;
     }
-
     uint8_t b0 = data[0];
     if (b0 < 0x80) {
         *out_cp = b0;
@@ -287,10 +304,6 @@ static uint16_t unicode_to_gbk(uint32_t cp)
     return 0;
 }
 
-/*
- * Chinese Windows: hold Alt, type GBK code as decimal on keypad, release Alt.
- * Example: 你 GBK=0xC4E3=50307 → Alt+50307.
- */
 static esp_err_t ch9329_type_gbk_alt(uint16_t gbk)
 {
     char digits[12];
@@ -301,7 +314,7 @@ static esp_err_t ch9329_type_gbk_alt(uint16_t gbk)
 
     uint8_t report[8] = {0};
     report[0] = HID_MOD_LALT;
-    esp_err_t err = ch9329_send_report(report); /* Alt down */
+    esp_err_t err = ch9329_send_report(report);
     if (err != ESP_OK) {
         return err;
     }
@@ -317,7 +330,7 @@ static esp_err_t ch9329_type_gbk_alt(uint16_t gbk)
         if (err != ESP_OK) {
             return err;
         }
-        report[2] = 0; /* release digit, keep Alt */
+        report[2] = 0;
         err = ch9329_send_report(report);
         if (err != ESP_OK) {
             return err;
@@ -325,7 +338,68 @@ static esp_err_t ch9329_type_gbk_alt(uint16_t gbk)
     }
 
     memset(report, 0, sizeof(report));
-    return ch9329_send_report(report); /* release all */
+    return ch9329_send_report(report);
+}
+
+/*
+ * Switch to ASCII serial mode for native GBK/区位码 typing.
+ * Critical: fast-upload OFF; each Han char sent as one 2-byte UART write.
+ */
+static bool ch9329_enable_ascii_mode(void)
+{
+    uart_flush_input(CH9329_UART_NUM);
+    if (ch9329_send_packet(CMD_GET_PARA_CFG, NULL, 0) != ESP_OK) {
+        return false;
+    }
+
+    uint8_t para[PARA_LEN];
+    if (ch9329_read_reply(0x88, para, PARA_LEN, 300) < PARA_LEN) {
+        ESP_LOGW(TAG, "GET_PARA_CFG failed");
+        return false;
+    }
+
+    para[0] = (uint8_t)(para[0] & 0x03);
+    if (para[0] > 1) {
+        para[0] = 0x01; /* keyboard only */
+    }
+    para[1] = 0x01; /* ASCII mode */
+    para[9] = 0x00;
+    para[10] = 8;   /* UART frame gap 8ms — bytes of one char must arrive faster */
+    para[15] = 0x00;
+    para[16] = 0x00; /* key upload interval 0 */
+    para[17] = 0x00;
+    para[18] = 0x01; /* key release delay 1ms */
+    para[19] = 0x00; /* no auto enter */
+    para[37] = 0x00; /* fast upload OFF (ON causes 你好→媚愫 desync) */
+
+    uart_flush_input(CH9329_UART_NUM);
+    if (ch9329_send_packet(CMD_SET_PARA_CFG, para, PARA_LEN) != ESP_OK) {
+        return false;
+    }
+    uint8_t ack[4];
+    if (ch9329_read_reply(0x89, ack, sizeof(ack), 300) < 1) {
+        ESP_LOGW(TAG, "SET_PARA_CFG no ack");
+        return false;
+    }
+
+    ch9329_send_packet(CMD_RESET, NULL, 0);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    uart_flush_input(CH9329_UART_NUM);
+    ESP_LOGI(TAG, "ASCII/GBK mode ready (fast upload off)");
+    return true;
+}
+
+/* One character per write: 1 byte ASCII or 2 bytes GBK together. */
+static esp_err_t ascii_put_char(const uint8_t *bytes, size_t n)
+{
+    if (n == 0) {
+        return ESP_OK;
+    }
+    if (uart_write_bytes(CH9329_UART_NUM, (const char *)bytes, n) != (int)n) {
+        return ESP_FAIL;
+    }
+    vTaskDelay(pdMS_TO_TICKS(CH9329_ASCII_GAP_MS));
+    return ESP_OK;
 }
 
 esp_err_t ch9329_init(void)
@@ -339,19 +413,20 @@ esp_err_t ch9329_init(void)
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    ESP_ERROR_CHECK(uart_driver_install(CH9329_UART_NUM, 1024, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_driver_install(CH9329_UART_NUM, 1024, 256, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(CH9329_UART_NUM, &cfg));
     ESP_ERROR_CHECK(uart_set_pin(CH9329_UART_NUM, CH9329_TX_GPIO, CH9329_RX_GPIO,
                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
     static const int baud_try[] = {9600, 115200};
     s_chip_ok = false;
+    s_ascii_mode = false;
+
     for (size_t i = 0; i < sizeof(baud_try) / sizeof(baud_try[0]); ++i) {
         s_baud = baud_try[i];
         ESP_ERROR_CHECK(uart_set_baudrate(CH9329_UART_NUM, s_baud));
         vTaskDelay(pdMS_TO_TICKS(20));
-        ESP_LOGI(TAG, "probing CH9329 at %d baud (TX=%d RX=%d)...",
-                 s_baud, CH9329_TX_GPIO, CH9329_RX_GPIO);
+        ESP_LOGI(TAG, "probing at %d baud...", s_baud);
         if (ch9329_probe()) {
             s_chip_ok = true;
             break;
@@ -359,55 +434,72 @@ esp_err_t ch9329_init(void)
     }
 
     if (s_chip_ok) {
-        ESP_LOGI(TAG, "CH9329 linked at %d baud (protocol + Alt+GBK)", s_baud);
+        if (ch9329_enable_ascii_mode()) {
+            s_ascii_mode = true;
+            ESP_LOGI(TAG, "ready: ASCII/GBK fast path @ %d", s_baud);
+        } else {
+            ESP_LOGW(TAG, "ASCII switch failed; slow Alt+GBK fallback @ %d", s_baud);
+        }
     } else {
-        ESP_LOGE(TAG,
-                 "CH9329 no reply. Chip may still be in ASCII mode from earlier firmware. "
-                 "Pull SET pin to GND, power-cycle once, then reboot ESP32. "
-                 "Or restore factory config with CH9329 tool.");
+        /* Previously configured ASCII — protocol probe will fail. */
+        s_baud = 9600;
+        ESP_ERROR_CHECK(uart_set_baudrate(CH9329_UART_NUM, s_baud));
+        s_chip_ok = true;
+        s_ascii_mode = true;
+        ESP_LOGW(TAG, "no protocol reply → assume ASCII @ %d (pull SET+GND to reconfigure)", s_baud);
     }
     return ESP_OK;
 }
 
 esp_err_t ch9329_key_combo(uint8_t modifier, uint8_t keycode)
 {
+    if (s_ascii_mode) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     return ch9329_send_key(modifier, keycode);
 }
 
 esp_err_t ch9329_type_utf8(const uint8_t *data, size_t len)
 {
-    if (!s_chip_ok) {
-        ESP_LOGW(TAG, "typing without CH9329 link — likely no keyboard output");
-    }
-
     size_t i = 0;
     while (i < len) {
         uint32_t cp = 0;
         size_t n = utf8_decode(data + i, len - i, &cp);
         if (n == 0) {
-            ESP_LOGW(TAG, "skip invalid UTF-8 at %u (0x%02X)", (unsigned)i, data[i]);
             i++;
             continue;
         }
         i += n;
 
-        esp_err_t err;
-        if (cp < 0x80) {
+        esp_err_t err = ESP_OK;
+        if (s_ascii_mode) {
+            if (cp < 0x80) {
+                uint8_t b = (uint8_t)cp;
+                err = ascii_put_char(&b, 1);
+            } else {
+                uint16_t gbk = unicode_to_gbk(cp);
+                if (gbk == 0) {
+                    ESP_LOGW(TAG, "no GBK for U+%04lX", (unsigned long)cp);
+                    continue;
+                }
+                uint8_t pair[2] = {(uint8_t)(gbk >> 8), (uint8_t)(gbk & 0xFF)};
+                err = ascii_put_char(pair, 2); /* MUST be one write */
+            }
+        } else if (cp < 0x80) {
             uint8_t mod = 0;
             uint8_t key = ascii_to_hid((char)cp, &mod);
             if (key == 0) {
-                ESP_LOGW(TAG, "skip unsupported ASCII=0x%02lX", (unsigned long)cp);
                 continue;
             }
             err = ch9329_send_key(mod, key);
         } else {
             uint16_t gbk = unicode_to_gbk(cp);
             if (gbk == 0) {
-                ESP_LOGW(TAG, "no GBK for U+%04lX, skip", (unsigned long)cp);
                 continue;
             }
             err = ch9329_type_gbk_alt(gbk);
         }
+
         if (err != ESP_OK) {
             return err;
         }
