@@ -1,0 +1,6 @@
+module countdown
+singleton AppConfig 1.0 AppConfig.qml
+StatusCard 1.0 StatusCard.qml
+RoundedButton 1.0 RoundedButton.qml
+SoftMenuItem 1.0 SoftMenuItem.qml
+SettingsDialog 1.0 SettingsDialog.qml
