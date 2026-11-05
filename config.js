@@ -1,10 +1,24 @@
-// 站点配置 —— 改密码请看文件底部说明
+// 站点配置
 window.SITE_CONFIG = {
   title: "我的资源库",
-  subtitle: "私人链接 · 仅自己可见",
+  subtitle: "私人链接 · 全设备同步",
   // 当前密码：147369
   passwordHash:
     "bc1583dbd69cf369314be86b8579f367cd17e441986f9131c240015829f044cf",
+
+  /*
+    全设备同步（必填后才能「一台改、全部看到」）
+    1. 打开 https://jsonbin.io 注册（免费）
+    2. 右上角头像 → API Keys → 复制 X-Master-Key
+    3. 点 Create Bin，内容先填：{"version":1,"extras":[],"overrides":{},"deleted":[]}
+    4. 创建后地址栏或详情里的 Bin ID 复制下来
+    5. 填到下面 remote.binId 和 remote.apiKey
+    6. 重新发布网站
+  */
+  remote: {
+    binId: "6aeb02aaac6210605a6b57da",
+    apiKey: "$2a$10$HISJzcLILRM6dmQ1KgCdDuHTW0i1edRLe4xCWp5QPN5cAtQjNn8p.",
+  },
 };
 
 /*
