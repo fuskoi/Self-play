@@ -52,7 +52,7 @@ esp_err_t lte_mqtt_connect(const char *host, int port, const char *client_id)
     char buf[128];
     snprintf(buf, sizeof(buf), "AT+MQTTCONN=0,\"%s\",%d,1,\"%s\",\"\",\"\"", host, port, client_id);
     at_send(buf);
-    /* 实际应解析 OK / ERROR；此处骨架直接返回 */
+    /* 实际应解析模组应答成功/失败；此处骨架直接返回 */
     return ESP_OK;
 }
 

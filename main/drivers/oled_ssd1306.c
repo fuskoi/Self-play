@@ -7,7 +7,7 @@
 static const char *TAG = "oled";
 static bool s_on = true;
 
-/* 精简桩：无屏时用日志代替；可替换为 u8g2 / esp_lcd SSD1306 */
+/* 精简桩：无屏时用日志代替；可替换为图形库或官方 LCD 驱动接 SSD1306 */
 
 esp_err_t oled_init(void)
 {

@@ -13,4 +13,4 @@ void mqtt_route_publish(const char *json);
 void mqtt_route_set_wifi_ready(bool ready);
 void mqtt_route_set_lte_ready(bool ready);
 void mqtt_route_set_ble_connected(bool connected);
-void mqtt_route_notify_ble(const char *json); /* 由 ble_task 实现弱回调或直接调用 */
+void mqtt_route_notify_ble(const char *json); /* 由蓝牙任务实现弱回调或直接调用 */

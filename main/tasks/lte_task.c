@@ -28,7 +28,7 @@ void lte_task(void *arg)
         }
 
         if (mode == NET_MODE_LTE || mode == NET_MODE_AUTO) {
-            /* AUTO 且 WiFi 可用时可跳过，这里简化：仅 LTE 模式主动上电 */
+            /* 自动模式且 Wi‑Fi 可用时可跳过；此处简化：仅 4G 模式主动上电 */
             if (mode == NET_MODE_LTE) {
                 lte_power_on_sequence();
                 lte_mqtt_connect("broker.emqx.io", 1883, APP_DEVICE_ID_PREFIX);

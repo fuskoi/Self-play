@@ -18,7 +18,7 @@ QueueHandle_t      count_queue(void);
 typedef struct {
     int delta_in;
     int delta_out;
-    int person_hint; /* 0=不用相机校正 */
+    int person_hint; /* 0 表示不用相机校正 */
 } count_msg_t;
 
 void tasks_start_all(void);
@@ -32,3 +32,4 @@ void wifi_mqtt_task(void *arg);
 void lte_task(void *arg);
 void power_task(void *arg);
 void telemetry_task(void *arg);
+void console_task(void *arg);

@@ -10,7 +10,7 @@
 
 static const char *TAG = "cam";
 
-/* TODO: 接入 esp32-camera / 自研 DVP 驱动 GC0308
+/* 待办：接入官方相机组件或自研并行接口驱动 GC0308
  * 当前返回合成灰度图，便于算法联调。
  */
 

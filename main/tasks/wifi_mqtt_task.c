@@ -29,7 +29,7 @@ void wifi_mqtt_task(void *arg)
     (void)arg;
     ESP_LOGI(TAG, "start");
 
-    /* 默认空凭证：未配网则不连，避免报错刷屏；配网后写入 NVS wifi_ssid/wifi_pass */
+    /* 默认空凭证：未配网则不连，避免报错刷屏；配网后写入非易失存储的账号密码 */
     char ssid[33] = {0};
     char pass[65] = {0};
     nvs_handle_t h;
@@ -46,7 +46,7 @@ void wifi_mqtt_task(void *arg)
     }
 
     wifi_init_sta(ssid, pass);
-    /* 简化：延时后认为已连（生产应等 IP_EVENT_STA_GOT_IP） */
+    /* 简化：延时后认为已连（量产应等待获取 IP 事件） */
     vTaskDelay(pdMS_TO_TICKS(5000));
 
     esp_mqtt_client_config_t mqtt_cfg = {

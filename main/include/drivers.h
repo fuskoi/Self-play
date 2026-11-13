@@ -18,6 +18,8 @@ esp_err_t tof_enter_autonomous_irq(void);
 esp_err_t tof_enter_active_mode(void);
 bool      tof_irq_pending(void);
 void      tof_irq_clear(void);
+void      tof_set_sim(bool enable);
+bool      tof_sim_enabled(void);
 
 esp_err_t cam_init(void);
 esp_err_t cam_capture_gray(uint8_t **out_buf, int *w, int *h);

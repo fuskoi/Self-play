@@ -4,7 +4,7 @@
 
 static const char *TAG = "ble";
 
-/* NimBLE GATT 完整实现可后续按 UUID 表补齐；此处保持可链接骨架 */
+/* 低功耗蓝牙 GATT 完整实现可后续按 UUID 表补齐；此处保持可链接骨架 */
 
 void ble_task(void *arg)
 {

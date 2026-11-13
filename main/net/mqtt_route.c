@@ -18,7 +18,7 @@ void mqtt_route_notify_ble(const char *json)
 {
     if (s_ble && json) {
         ESP_LOGI(TAG, "BLE notify: %s", json);
-        /* TODO: GATT Notify 在 ble_task 中真正发送 */
+        /* 待办：在蓝牙任务中真正发送 GATT 通知 */
     }
 }
 
@@ -45,7 +45,7 @@ void mqtt_route_publish(const char *json)
 
     if (use_wifi) {
         ESP_LOGI(TAG, "WiFi MQTT pub: %s", json);
-        /* 实际发布在 wifi_mqtt_task 订阅队列；此处先打日志，由任务侧扩展 */
+        /* 实际发布应由 Wi‑Fi MQTT 任务完成；此处先打日志，后续扩展 */
     } else if (use_lte) {
         ESP_LOGI(TAG, "LTE MQTT pub: %s", json);
     } else {

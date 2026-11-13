@@ -46,7 +46,7 @@ bool board_key2_pressed(void)
 
 void board_buzzer_beep(int pattern)
 {
-    /* pattern 1=超员间歇 2=低电三短声 */
+    /* 模式 1=超员间歇鸣，2=低电三短声 */
     if (pattern == 2) {
         for (int i = 0; i < 3; i++) {
             gpio_set_level(PIN_BUZZER, 1);

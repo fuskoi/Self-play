@@ -20,6 +20,7 @@ idf_component_register(
         "tasks/lte_task.c"
         "tasks/power_task.c"
         "tasks/telemetry_task.c"
+        "tasks/console_task.c"
         "net/proto_json.c"
         "net/mqtt_route.c"
         "power/battery.c"
@@ -38,7 +39,9 @@ idf_component_register(
         esp_wifi
         esp_event
         esp_netif
+        esp_timer
         mqtt
         bt
         freertos
+        vl53l5cx
 )

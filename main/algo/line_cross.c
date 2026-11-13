@@ -1,7 +1,7 @@
 #include "algo.h"
 
-/* gate_y：虚拟门线在 8x8 纵向坐标（约 3.5~4.5）
- * A 侧 cy < gate，B 侧 cy > gate
+/* 虚拟门线纵向坐标（8×8 网格，约 3.5～4.5）
+ * A 侧：纵坐标小于门线；B 侧：纵坐标大于门线
  */
 cross_event_t algo_line_cross_process(track_t tracks[APP_MAX_TRACKS], float gate_y)
 {

@@ -28,7 +28,7 @@ void count_task(void *arg)
         app_state_lock();
         if (msg.delta_in > 0) st->in_count += (uint32_t)msg.delta_in;
         if (msg.delta_out > 0) st->out_count += (uint32_t)msg.delta_out;
-        /* person_hint：宽目标校正——若一次穿越但相机认为多人，补记进入 */
+        /* 人数提示：宽目标校正——一次穿越但相机认为多人时，补记进入 */
         if (msg.person_hint >= 2 && msg.delta_in == 1) {
             st->in_count += (uint32_t)(msg.person_hint - 1);
         }

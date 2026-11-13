@@ -36,7 +36,7 @@ int algo_cluster_from_depth(const uint16_t dist_mm[APP_TOF_ZONE_N],
                 continue;
             }
 
-            /* 简易 flood fill */
+            /* 简易泛洪填充连通域 */
             int q[APP_TOF_ZONE_N];
             int qh = 0, qt = 0;
             q[qt++] = idx;

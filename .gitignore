@@ -32,6 +32,9 @@ __pycache__/
 venv/
 *.egg-info/
 
+# Vendor dumps (ULD lives in components/vl53l5cx)
+docs/VL53L5CX资料/
+
 # OS junk
 .DS_Store
 Thumbs.db

@@ -12,11 +12,11 @@
 #define APP_VBAT_CRIT_MV          3400
 #define APP_VBAT_CLEAR_MV         3600
 
-#define APP_TOF_ZONE_N            64   /* 8x8 */
+#define APP_TOF_ZONE_N            64   /* 8×8 分区 */
 #define APP_MAX_TRACKS            8
 #define APP_MAX_CLUSTERS          6
 
-#define APP_W_SINGLE_ZONES        2.2f /* 单人簇宽度阈值（区） */
+#define APP_W_SINGLE_ZONES        2.2f /* 单人簇宽度阈值（分区数） */
 #define APP_MULTI_WIDTH_K         1.6f
 
 #define APP_MQTT_HEARTBEAT_MS     30000
@@ -38,7 +38,7 @@ typedef struct {
     uint32_t out_count;
     int32_t  occ;
     uint8_t  bat_percent;
-    uint8_t  alarm;      /* bit0 超员 bit1 低电 */
+    uint8_t  alarm;      /* 位0：超员；位1：低电 */
     net_mode_t net_mode;
     sys_mode_t sys_mode;
     uint16_t occ_threshold;

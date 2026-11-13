@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_timer.h"
+#include "esp_mac.h"
 
 int proto_build_telemetry(const app_state_t *st, char *buf, int buflen)
 {
@@ -10,10 +11,17 @@ int proto_build_telemetry(const app_state_t *st, char *buf, int buflen)
     if (st->net_mode == NET_MODE_LTE) net = "lte";
     else if (st->net_mode == NET_MODE_AUTO) net = "auto";
 
+    /* 软件方案第6.1节：设备号形如 pcounter-xxxxxx */
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char device_id[24];
+    snprintf(device_id, sizeof(device_id), "%s-%02x%02x%02x",
+             APP_DEVICE_ID_PREFIX, mac[3], mac[4], mac[5]);
+
     return snprintf(buf, buflen,
                     "{\"device_id\":\"%s\",\"in\":%lu,\"out\":%lu,\"occ\":%ld,"
                     "\"bat\":%u,\"alarm\":%u,\"net\":\"%s\",\"ts\":%lld}",
-                    APP_DEVICE_ID_PREFIX,
+                    device_id,
                     (unsigned long)st->in_count,
                     (unsigned long)st->out_count,
                     (long)st->occ,

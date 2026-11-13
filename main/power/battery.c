@@ -7,6 +7,13 @@
 static const char *TAG = "bat";
 static adc_oneshot_unit_handle_t s_adc;
 static bool s_ok;
+static uint16_t s_sim_mv; /* 0=未模拟 */
+
+void battery_set_sim_mv(uint16_t mv)
+{
+    s_sim_mv = mv;
+    ESP_LOGI(TAG, "sim_mv=%u", (unsigned)mv);
+}
 
 esp_err_t battery_init(void)
 {
@@ -20,7 +27,7 @@ esp_err_t battery_init(void)
         .bitwidth = ADC_BITWIDTH_DEFAULT,
         .atten = ADC_ATTEN_DB_12,
     };
-    /* PIN_BAT_ADC=GPIO2 → 需按 S3 ADC 通道映射修改 */
+    /* 电池 ADC 脚为 GPIO2，需按 S3 的 ADC 通道映射修改 */
     err = adc_oneshot_config_channel(s_adc, ADC_CHANNEL_1, &ch);
     s_ok = (err == ESP_OK);
     ESP_LOGI(TAG, "battery adc %s", s_ok ? "ok" : "stub");
@@ -29,10 +36,11 @@ esp_err_t battery_init(void)
 
 uint16_t battery_read_mv(void)
 {
+    if (s_sim_mv > 0) return s_sim_mv;
     if (!s_ok) return 3900;
     int raw = 0;
     adc_oneshot_read(s_adc, ADC_CHANNEL_1, &raw);
-    /* 假设 1:1 分压后校准：raw -> mV，现场标定 */
+    /* 假设分压后换算：原始值 → 毫伏，需现场标定 */
     int mv = raw * 2 * 3300 / 4095;
     if (mv < 3000) mv = 3000;
     if (mv > 4200) mv = 4200;

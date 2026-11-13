@@ -15,7 +15,7 @@
 #define PIN_LTE_PWRKEY        11
 
 #define PIN_CAM_PWR_EN        7
-/* GC0308 DVP 脚位按模组与 esp32-camera 例程在 cam_gc0308.c 中配置 */
+/* 相机并行接口脚位按模组与例程，在 cam_gc0308.c 中配置 */
 
 #define PIN_BUZZER            12
 #define PIN_KEY1              0

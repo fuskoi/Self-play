@@ -29,6 +29,7 @@ void tasks_start_all(void)
     xTaskCreate(lte_task, "lte", 4096, NULL, 3, NULL);
     xTaskCreate(power_task, "power", 3072, NULL, 4, NULL);
     xTaskCreate(telemetry_task, "telem", 3072, NULL, 3, NULL);
+    xTaskCreate(console_task, "console", 3072, NULL, 2, NULL);
 }
 
 void app_main(void)

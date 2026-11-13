@@ -38,7 +38,7 @@ void algo_tracker_update(const perceive_result_t *perc, uint32_t now_ms, track_t
             tracks[t].cy = perc->clusters[best].cy;
             tracks[t].width = perc->clusters[best].width;
             tracks[t].last_seen_ms = now_ms;
-            /* side 由 line_cross 根据 cy 相对门线更新 */
+            /* 侧别由 line_cross 根据 cy 相对门线更新 */
         } else if (now_ms - tracks[t].last_seen_ms > TRACK_TIMEOUT_MS) {
             tracks[t].active = false;
         }

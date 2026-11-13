@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "src/vl53l5cx_api.c"
+        "src/vl53l5cx_plugin_detection_thresholds.c"
+        "port/platform_esp.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        driver
+        esp_timer
+        freertos
+)
