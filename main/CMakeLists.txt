@@ -5,6 +5,7 @@ idf_component_register(
         "algo/cluster.c"
         "algo/tracker.c"
         "algo/line_cross.c"
+        "algo/depth_fuse.c"
         "algo/cam_count.c"
         "drivers/tof_vl53l5cx.c"
         "drivers/cam_gc0308.c"

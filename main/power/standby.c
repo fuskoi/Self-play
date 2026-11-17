@@ -55,6 +55,7 @@ void standby_service(void)
     st->sys_mode = SYS_MODE_ACTIVE;
     app_state_unlock();
 
-    xEventGroupSetBits(app_events(), EVT_EXIT_STANDBY);
+    /* 唤醒后刷新 UI/遥测，并通知 Wi‑Fi 任务恢复 */
+    xEventGroupSetBits(app_events(), EVT_EXIT_STANDBY | EVT_UI_REFRESH | EVT_TELEMETRY_PUSH);
     ESP_LOGI(TAG, "exit standby, tof_wake=%d", (int)s_woke_tof);
 }

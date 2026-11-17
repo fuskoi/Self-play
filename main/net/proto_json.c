@@ -63,6 +63,16 @@ bool proto_handle_command(const char *json, app_state_t *st)
     } else if (strcmp(cmd->valuestring, "set_idle_sec") == 0) {
         cJSON *s = cJSON_GetObjectItem(root, "idle_sec");
         if (cJSON_IsNumber(s)) st->idle_ms = (uint32_t)(s->valuedouble * 1000.0);
+    } else if (strcmp(cmd->valuestring, "set_install_h") == 0) {
+        cJSON *h = cJSON_GetObjectItem(root, "install_h_m");
+        if (cJSON_IsNumber(h) && h->valuedouble >= 1.5 && h->valuedouble <= 3.5) {
+            st->install_h_m = (float)h->valuedouble;
+        }
+    } else if (strcmp(cmd->valuestring, "set_gate_y") == 0) {
+        cJSON *g = cJSON_GetObjectItem(root, "gate_y");
+        if (cJSON_IsNumber(g) && g->valuedouble >= 1.0 && g->valuedouble <= 7.0) {
+            st->gate_y = (float)g->valuedouble;
+        }
     } else if (strcmp(cmd->valuestring, "get_status") == 0) {
         xEventGroupSetBits(app_events(), EVT_TELEMETRY_PUSH);
     }

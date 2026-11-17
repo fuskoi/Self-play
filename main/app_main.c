@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include "nvs_flash.h"
-#include "nvs.h"
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_log.h"
@@ -9,6 +8,7 @@
 #include "power_mgr.h"
 #include "net_proto.h"
 #include "tasks_api.h"
+#include "tof_api.h"
 
 static const char *TAG = "app";
 
@@ -20,7 +20,7 @@ QueueHandle_t count_queue(void) { return s_count_q; }
 
 void tasks_start_all(void)
 {
-    xTaskCreate(tof_task, "tof", 4096, NULL, 5, NULL);
+    xTaskCreate(tof_task, "tof", 5120, NULL, 5, NULL);
     xTaskCreate(cam_task, "cam", 4096, NULL, 4, NULL);
     xTaskCreate(count_task, "count", 3072, NULL, 5, NULL);
     xTaskCreate(ui_task, "ui", 3072, NULL, 3, NULL);
@@ -45,6 +45,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     app_state_init();
+    app_state_load_nvs();
     s_events = xEventGroupCreate();
     s_count_q = xQueueCreate(16, sizeof(count_msg_t));
     mqtt_route_init();
@@ -55,21 +56,10 @@ void app_main(void)
     ESP_ERROR_CHECK(app_cam_init());
     ESP_ERROR_CHECK(oled_init());
 
-    /* 恢复日累计 */
-    nvs_handle_t h;
-    if (nvs_open("ridership", NVS_READONLY, &h) == ESP_OK) {
-        app_state_t *st = app_state_get();
-        uint32_t in_c = 0, out_c = 0;
-        nvs_get_u32(h, "in", &in_c);
-        nvs_get_u32(h, "out", &out_c);
-        nvs_close(h);
-        app_state_lock();
-        st->in_count = in_c;
-        st->out_count = out_c;
-        st->occ = (int32_t)((in_c > out_c) ? (in_c - out_c) : 0);
-        app_state_unlock();
-    }
-
     tasks_start_all();
+
+    /* 上电空场背景标定（无传感器时仿真帧也可跑通流程） */
+    tof_start_bg_calibrate();
+
     ESP_LOGI(TAG, "all tasks started");
 }
