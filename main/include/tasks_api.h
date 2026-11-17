@@ -11,6 +11,7 @@
 #define EVT_UI_REFRESH      BIT3
 #define EVT_ENTER_STANDBY   BIT4
 #define EVT_EXIT_STANDBY    BIT5
+#define EVT_WIFI_CREDS      BIT6  /* BLE 配网写入新 Wi‑Fi 凭证 */
 
 EventGroupHandle_t app_events(void);
 QueueHandle_t      count_queue(void);

@@ -1,9 +1,18 @@
 #include "net_proto.h"
+#include "tasks_api.h"
 #include "cJSON.h"
 #include <stdio.h>
 #include <string.h>
 #include "esp_timer.h"
 #include "esp_mac.h"
+
+void proto_device_id(char *buf, int buflen)
+{
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(buf, buflen, "%s-%02x%02x%02x",
+             APP_DEVICE_ID_PREFIX, mac[3], mac[4], mac[5]);
+}
 
 int proto_build_telemetry(const app_state_t *st, char *buf, int buflen)
 {
@@ -11,12 +20,8 @@ int proto_build_telemetry(const app_state_t *st, char *buf, int buflen)
     if (st->net_mode == NET_MODE_LTE) net = "lte";
     else if (st->net_mode == NET_MODE_AUTO) net = "auto";
 
-    /* 软件方案第6.1节：设备号形如 pcounter-xxxxxx */
-    uint8_t mac[6] = {0};
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
     char device_id[24];
-    snprintf(device_id, sizeof(device_id), "%s-%02x%02x%02x",
-             APP_DEVICE_ID_PREFIX, mac[3], mac[4], mac[5]);
+    proto_device_id(device_id, sizeof(device_id));
 
     return snprintf(buf, buflen,
                     "{\"device_id\":\"%s\",\"in\":%lu,\"out\":%lu,\"occ\":%ld,"
@@ -58,6 +63,8 @@ bool proto_handle_command(const char *json, app_state_t *st)
     } else if (strcmp(cmd->valuestring, "set_idle_sec") == 0) {
         cJSON *s = cJSON_GetObjectItem(root, "idle_sec");
         if (cJSON_IsNumber(s)) st->idle_ms = (uint32_t)(s->valuedouble * 1000.0);
+    } else if (strcmp(cmd->valuestring, "get_status") == 0) {
+        xEventGroupSetBits(app_events(), EVT_TELEMETRY_PUSH);
     }
 
     cJSON_Delete(root);

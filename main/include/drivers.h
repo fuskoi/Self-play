@@ -21,9 +21,10 @@ void      tof_irq_clear(void);
 void      tof_set_sim(bool enable);
 bool      tof_sim_enabled(void);
 
-esp_err_t cam_init(void);
-esp_err_t cam_capture_gray(uint8_t **out_buf, int *w, int *h);
-void      cam_release(uint8_t *buf);
+/* 避免与 esp32-camera 内部 cam_init 符号冲突 */
+esp_err_t app_cam_init(void);
+esp_err_t app_cam_capture_gray(uint8_t **out_buf, int *w, int *h);
+void      app_cam_release(uint8_t *buf);
 
 esp_err_t oled_init(void);
 void      oled_clear(void);
@@ -31,8 +32,13 @@ void      oled_show_main(uint32_t in_c, uint32_t out_c, int32_t occ);
 void      oled_show_status(uint8_t bat, const char *net, uint8_t alarm);
 void      oled_power(bool on);
 
+/* Air780E UART AT */
 esp_err_t lte_init(void);
 esp_err_t lte_power_on_sequence(void);
+esp_err_t lte_power_off(void);
+esp_err_t lte_wait_network(int timeout_ms);
 esp_err_t lte_mqtt_connect(const char *host, int port, const char *client_id);
+esp_err_t lte_mqtt_disconnect(void);
 esp_err_t lte_mqtt_publish(const char *topic, const char *payload);
+bool      lte_mqtt_is_ready(void);
 void      lte_poll(void);

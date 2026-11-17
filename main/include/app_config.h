@@ -22,6 +22,22 @@
 #define APP_MQTT_HEARTBEAT_MS     30000
 #define APP_UI_PERIOD_MS          100
 
+/* Wi‑Fi MQTT（与方案 §6.3 Topic 一致） */
+#define APP_WIFI_MQTT_URI           "mqtt://broker.emqx.io"
+#define APP_WIFI_MQTT_PORT          1883
+
+/* Air780E / 银尔达 M100M AT 固件 MQTT */
+#define APP_LTE_MQTT_HOST           "broker.emqx.io"
+#define APP_LTE_MQTT_PORT           1883
+#define APP_LTE_MQTT_USER           ""
+#define APP_LTE_MQTT_PASS           ""
+#define APP_LTE_MQTT_KEEPALIVE_S    60
+#define APP_LTE_MQTT_TOPIC_TELEMETRY "ridership/telemetry"
+#define APP_LTE_MQTT_TOPIC_CMD       "ridership/cmd"
+#define APP_LTE_NET_TIMEOUT_MS      90000
+#define APP_LTE_MQTT_CONN_TIMEOUT_MS 30000
+#define APP_LTE_RECONNECT_MS        10000
+
 typedef enum {
     NET_MODE_WIFI = 0,
     NET_MODE_LTE  = 1,

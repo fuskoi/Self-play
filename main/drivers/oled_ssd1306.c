@@ -1,35 +1,370 @@
 #include "drivers.h"
 #include "board_pins.h"
+#include "i2c_bus.h"
+#include "driver/i2c.h"
 #include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
 
+/*
+ * 0.96" OLED · SSD1306 · I²C（与采购清单一致）
+ * 手册要点（Solomon SSD1306）：
+ *   - 从地址常见 0x3C（SA0=0）或 0x3D（SA0=1）
+ *   - 控制字节：0x00=命令流，0x40=显存数据
+ *   - 本驱动：128×64，水平寻址，帧缓冲整屏刷新
+ * 接线：SDA=GPIO8，SCL=GPIO9，与双 ToF 共总线
+ */
+
 static const char *TAG = "oled";
+
+#define OLED_W            128
+#define OLED_H            64
+#define OLED_PAGES        (OLED_H / 8)
+#define OLED_ADDR_PRIMARY 0x3C
+#define OLED_ADDR_ALT     0x3D
+#define OLED_I2C_TIMEOUT  pdMS_TO_TICKS(100)
+
+static uint8_t s_addr = OLED_ADDR_PRIMARY;
+static uint8_t s_fb[OLED_W * OLED_PAGES];
+static bool s_ok;
 static bool s_on = true;
+static bool s_dirty;
 
-/* 精简桩：无屏时用日志代替；可替换为图形库或官方 LCD 驱动接 SSD1306 */
+/* 5×7 点阵，列优先，ASCII 0x20～0x7F */
+static const uint8_t s_font5x7[][5] = {
+    {0x00,0x00,0x00,0x00,0x00}, /*   */
+    {0x00,0x00,0x5F,0x00,0x00}, /* ! */
+    {0x00,0x07,0x00,0x07,0x00}, /* " */
+    {0x14,0x7F,0x14,0x7F,0x14}, /* # */
+    {0x24,0x2A,0x7F,0x2A,0x12}, /* $ */
+    {0x23,0x13,0x08,0x64,0x62}, /* % */
+    {0x36,0x49,0x55,0x22,0x50}, /* & */
+    {0x00,0x05,0x03,0x00,0x00}, /* ' */
+    {0x00,0x1C,0x22,0x41,0x00}, /* ( */
+    {0x00,0x41,0x22,0x1C,0x00}, /* ) */
+    {0x08,0x2A,0x1C,0x2A,0x08}, /* * */
+    {0x08,0x08,0x3E,0x08,0x08}, /* + */
+    {0x00,0x50,0x30,0x00,0x00}, /* , */
+    {0x08,0x08,0x08,0x08,0x08}, /* - */
+    {0x00,0x60,0x60,0x00,0x00}, /* . */
+    {0x20,0x10,0x08,0x04,0x02}, /* / */
+    {0x3E,0x51,0x49,0x45,0x3E}, /* 0 */
+    {0x00,0x42,0x7F,0x40,0x00}, /* 1 */
+    {0x42,0x61,0x51,0x49,0x46}, /* 2 */
+    {0x21,0x41,0x45,0x4B,0x31}, /* 3 */
+    {0x18,0x14,0x12,0x7F,0x10}, /* 4 */
+    {0x27,0x45,0x45,0x45,0x39}, /* 5 */
+    {0x3C,0x4A,0x49,0x49,0x30}, /* 6 */
+    {0x01,0x71,0x09,0x05,0x03}, /* 7 */
+    {0x36,0x49,0x49,0x49,0x36}, /* 8 */
+    {0x06,0x49,0x49,0x29,0x1E}, /* 9 */
+    {0x00,0x36,0x36,0x00,0x00}, /* : */
+    {0x00,0x56,0x36,0x00,0x00}, /* ; */
+    {0x00,0x08,0x14,0x22,0x41}, /* < */
+    {0x14,0x14,0x14,0x14,0x14}, /* = */
+    {0x41,0x22,0x14,0x08,0x00}, /* > */
+    {0x02,0x01,0x51,0x09,0x06}, /* ? */
+    {0x32,0x49,0x79,0x41,0x3E}, /* @ */
+    {0x7E,0x11,0x11,0x11,0x7E}, /* A */
+    {0x7F,0x49,0x49,0x49,0x36}, /* B */
+    {0x3E,0x41,0x41,0x41,0x22}, /* C */
+    {0x7F,0x41,0x41,0x22,0x1C}, /* D */
+    {0x7F,0x49,0x49,0x49,0x41}, /* E */
+    {0x7F,0x09,0x09,0x01,0x01}, /* F */
+    {0x3E,0x41,0x41,0x51,0x32}, /* G */
+    {0x7F,0x08,0x08,0x08,0x7F}, /* H */
+    {0x00,0x41,0x7F,0x41,0x00}, /* I */
+    {0x20,0x40,0x41,0x3F,0x01}, /* J */
+    {0x7F,0x08,0x14,0x22,0x41}, /* K */
+    {0x7F,0x40,0x40,0x40,0x40}, /* L */
+    {0x7F,0x02,0x04,0x02,0x7F}, /* M */
+    {0x7F,0x04,0x08,0x10,0x7F}, /* N */
+    {0x3E,0x41,0x41,0x41,0x3E}, /* O */
+    {0x7F,0x09,0x09,0x09,0x06}, /* P */
+    {0x3E,0x41,0x51,0x21,0x5E}, /* Q */
+    {0x7F,0x09,0x19,0x29,0x46}, /* R */
+    {0x46,0x49,0x49,0x49,0x31}, /* S */
+    {0x01,0x01,0x7F,0x01,0x01}, /* T */
+    {0x3F,0x40,0x40,0x40,0x3F}, /* U */
+    {0x1F,0x20,0x40,0x20,0x1F}, /* V */
+    {0x7F,0x20,0x18,0x20,0x7F}, /* W */
+    {0x63,0x14,0x08,0x14,0x63}, /* X */
+    {0x03,0x04,0x78,0x04,0x03}, /* Y */
+    {0x61,0x51,0x49,0x45,0x43}, /* Z */
+    {0x00,0x00,0x7F,0x41,0x41}, /* [ */
+    {0x02,0x04,0x08,0x10,0x20}, /* \ */
+    {0x41,0x41,0x7F,0x00,0x00}, /* ] */
+    {0x04,0x02,0x01,0x02,0x04}, /* ^ */
+    {0x40,0x40,0x40,0x40,0x40}, /* _ */
+    {0x00,0x01,0x02,0x04,0x00}, /* ` */
+    {0x20,0x54,0x54,0x54,0x78}, /* a */
+    {0x7F,0x48,0x44,0x44,0x38}, /* b */
+    {0x38,0x44,0x44,0x44,0x20}, /* c */
+    {0x38,0x44,0x44,0x48,0x7F}, /* d */
+    {0x38,0x54,0x54,0x54,0x18}, /* e */
+    {0x08,0x7E,0x09,0x01,0x02}, /* f */
+    {0x08,0x14,0x54,0x54,0x3C}, /* g */
+    {0x7F,0x08,0x04,0x04,0x78}, /* h */
+    {0x00,0x44,0x7D,0x40,0x00}, /* i */
+    {0x20,0x40,0x44,0x3D,0x00}, /* j */
+    {0x00,0x7F,0x10,0x28,0x44}, /* k */
+    {0x00,0x41,0x7F,0x40,0x00}, /* l */
+    {0x7C,0x04,0x18,0x04,0x78}, /* m */
+    {0x7C,0x08,0x04,0x04,0x78}, /* n */
+    {0x38,0x44,0x44,0x44,0x38}, /* o */
+    {0x7C,0x14,0x14,0x14,0x08}, /* p */
+    {0x08,0x14,0x14,0x18,0x7C}, /* q */
+    {0x7C,0x08,0x04,0x04,0x08}, /* r */
+    {0x48,0x54,0x54,0x54,0x20}, /* s */
+    {0x04,0x3F,0x44,0x40,0x20}, /* t */
+    {0x3C,0x40,0x40,0x20,0x7C}, /* u */
+    {0x1C,0x20,0x40,0x20,0x1C}, /* v */
+    {0x3C,0x40,0x30,0x40,0x3C}, /* w */
+    {0x44,0x28,0x10,0x28,0x44}, /* x */
+    {0x0C,0x50,0x50,0x50,0x3C}, /* y */
+    {0x44,0x64,0x54,0x4C,0x44}, /* z */
+    {0x00,0x08,0x36,0x41,0x00}, /* { */
+    {0x00,0x00,0x7F,0x00,0x00}, /* | */
+    {0x00,0x41,0x36,0x08,0x00}, /* } */
+    {0x08,0x04,0x08,0x10,0x08}, /* ~ */
+};
 
-esp_err_t oled_init(void)
+static esp_err_t oled_i2c_write(const uint8_t *data, size_t len)
 {
-    ESP_LOGI(TAG, "SSD1306 init (log fallback)");
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    if (!cmd) {
+        return ESP_ERR_NO_MEM;
+    }
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (uint8_t)((s_addr << 1) | I2C_MASTER_WRITE), true);
+    i2c_master_write(cmd, (uint8_t *)data, len, true);
+    i2c_master_stop(cmd);
+    i2c_bus_lock();
+    esp_err_t err = i2c_master_cmd_begin(I2C_PORT_NUM, cmd, OLED_I2C_TIMEOUT);
+    i2c_bus_unlock();
+    i2c_cmd_link_delete(cmd);
+    return err;
+}
+
+static esp_err_t oled_cmd(uint8_t c)
+{
+    uint8_t buf[2] = {0x00, c};
+    return oled_i2c_write(buf, 2);
+}
+
+static esp_err_t oled_cmd2(uint8_t c, uint8_t v)
+{
+    uint8_t buf[3] = {0x00, c, v};
+    return oled_i2c_write(buf, 3);
+}
+
+static esp_err_t oled_probe(uint8_t addr)
+{
+    s_addr = addr;
+    return oled_cmd(0xAE); /* Display OFF — 探测用 */
+}
+
+static void fb_clear(void)
+{
+    memset(s_fb, 0, sizeof(s_fb));
+    s_dirty = true;
+}
+
+static void fb_pixel(int x, int y, bool on)
+{
+    if (x < 0 || x >= OLED_W || y < 0 || y >= OLED_H) {
+        return;
+    }
+    int idx = x + (y / 8) * OLED_W;
+    uint8_t bit = (uint8_t)(1u << (y & 7));
+    if (on) {
+        s_fb[idx] |= bit;
+    } else {
+        s_fb[idx] &= (uint8_t)~bit;
+    }
+    s_dirty = true;
+}
+
+static void fb_char(int x, int y, char ch)
+{
+    if (ch < 0x20 || ch > 0x7E) {
+        ch = '?';
+    }
+    const uint8_t *g = s_font5x7[ch - 0x20];
+    for (int col = 0; col < 5; col++) {
+        uint8_t line = g[col];
+        for (int row = 0; row < 7; row++) {
+            fb_pixel(x + col, y + row, (line >> row) & 1);
+        }
+    }
+}
+
+static void fb_text(int x, int y, const char *s)
+{
+    while (s && *s) {
+        fb_char(x, y, *s++);
+        x += 6;
+        if (x > OLED_W - 6) {
+            break;
+        }
+    }
+}
+
+static esp_err_t oled_flush(void)
+{
+    if (!s_ok || !s_on) {
+        return ESP_OK;
+    }
+    /* 列 0～127，页 0～7 */
+    esp_err_t err = oled_cmd2(0x21, 0x00);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = oled_cmd(0x7F);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = oled_cmd2(0x22, 0x00);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = oled_cmd(0x07);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    /* 分块送显存：控制字节 0x40 + 数据 */
+    for (int page = 0; page < OLED_PAGES; page++) {
+        uint8_t chunk[1 + OLED_W];
+        chunk[0] = 0x40;
+        memcpy(&chunk[1], &s_fb[page * OLED_W], OLED_W);
+        err = oled_i2c_write(chunk, sizeof(chunk));
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+    s_dirty = false;
     return ESP_OK;
 }
 
-void oled_clear(void) {}
+static esp_err_t oled_hw_init_seq(void)
+{
+    /* 手册典型上电初始化（电荷泵、复用 1/64、水平寻址） */
+    const uint8_t seq[] = {
+        0xAE,             /* Display OFF */
+        0xD5, 0x80,       /* 时钟分频 */
+        0xA8, 0x3F,       /* 复用比 64 */
+        0xD3, 0x00,       /* 显示偏移 */
+        0x40,             /* 起始行 */
+        0x8D, 0x14,       /* 电荷泵开（内部 VCC 模组必开） */
+        0x20, 0x00,       /* 水平寻址 */
+        0xA1,             /* SEG 重映射 */
+        0xC8,             /* COM 扫描方向 */
+        0xDA, 0x12,       /* COM 引脚配置（128×64） */
+        0x81, 0xCF,       /* 对比度 */
+        0xD9, 0xF1,       /* 预充电 */
+        0xDB, 0x40,       /* VCOMH */
+        0xA4,             /* 输出跟随 RAM */
+        0xA6,             /* 正常显示（非反色） */
+        0xAF,             /* Display ON */
+    };
+    for (size_t i = 0; i < sizeof(seq); i++) {
+        esp_err_t err = oled_cmd(seq[i]);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t oled_init(void)
+{
+    esp_err_t err = i2c_bus_ensure_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "i2c bus: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = oled_probe(OLED_ADDR_PRIMARY);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "0x3C fail, try 0x3D");
+        err = oled_probe(OLED_ADDR_ALT);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "SSD1306 not found — keep log fallback");
+        s_ok = false;
+        return ESP_OK; /* 无屏不阻断整机启动 */
+    }
+
+    err = oled_hw_init_seq();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "init seq fail: %s", esp_err_to_name(err));
+        s_ok = false;
+        return ESP_OK;
+    }
+
+    s_ok = true;
+    s_on = true;
+    fb_clear();
+    fb_text(16, 28, "RIDERSHIP");
+    oled_flush();
+    ESP_LOGI(TAG, "SSD1306 OK addr=0x%02X", s_addr);
+    return ESP_OK;
+}
+
+void oled_clear(void)
+{
+    fb_clear();
+    if (s_ok && s_on) {
+        oled_flush();
+    }
+}
 
 void oled_power(bool on)
 {
     s_on = on;
+    if (!s_ok) {
+        return;
+    }
+    oled_cmd(on ? 0xAF : 0xAE);
+    if (on) {
+        oled_flush();
+    }
 }
 
 void oled_show_main(uint32_t in_c, uint32_t out_c, int32_t occ)
 {
-    if (!s_on) return;
-    ESP_LOGI(TAG, "IN=%lu OUT=%lu OCC=%ld", (unsigned long)in_c, (unsigned long)out_c, (long)occ);
+    char line[22];
+    if (!s_ok) {
+        ESP_LOGI(TAG, "IN=%lu OUT=%lu OCC=%ld",
+                 (unsigned long)in_c, (unsigned long)out_c, (long)occ);
+        return;
+    }
+    fb_clear();
+    fb_text(0, 0, "PASSENGER COUNTER");
+    snprintf(line, sizeof(line), "IN   %5lu", (unsigned long)in_c);
+    fb_text(0, 16, line);
+    snprintf(line, sizeof(line), "OUT  %5lu", (unsigned long)out_c);
+    fb_text(0, 28, line);
+    snprintf(line, sizeof(line), "OCC  %5ld", (long)occ);
+    fb_text(0, 40, line);
+    /* 由随后的 oled_show_status 统一 flush，避免同帧刷两次 */
 }
 
 void oled_show_status(uint8_t bat, const char *net, uint8_t alarm)
 {
-    if (!s_on) return;
-    ESP_LOGI(TAG, "BAT=%u%% NET=%s ALARM=0x%02X", bat, net ? net : "?", alarm);
+    char line[22];
+    if (!s_ok) {
+        ESP_LOGI(TAG, "BAT=%u%% NET=%s ALARM=0x%02X", bat, net ? net : "?", alarm);
+        return;
+    }
+    /* 叠在主页面底部状态行 */
+    snprintf(line, sizeof(line), "BAT%3u%% %-4s", (unsigned)bat, net ? net : "?");
+    fb_text(0, 56, line);
+    if (alarm & 0x01) {
+        fb_text(98, 56, "FULL");
+    } else if (alarm & 0x02) {
+        fb_text(98, 56, "LOW");
+    }
+    oled_flush();
 }

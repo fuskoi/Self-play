@@ -1,5 +1,6 @@
 #include "drivers.h"
 #include "board_pins.h"
+#include "i2c_bus.h"
 #include "driver/i2c.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -66,23 +67,7 @@ static void xshut_set(gpio_num_t pin, int level)
 
 static esp_err_t i2c_bus_init(void)
 {
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = PIN_I2C_SDA,
-        .scl_io_num = PIN_I2C_SCL,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_FREQ_HZ,
-    };
-    esp_err_t err = i2c_param_config(I2C_PORT_NUM, &conf);
-    if (err != ESP_OK) {
-        return err;
-    }
-    err = i2c_driver_install(I2C_PORT_NUM, conf.mode, 0, 0, 0);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        return err;
-    }
-    return ESP_OK;
+    return i2c_bus_ensure_init();
 }
 
 static bool status_valid(uint8_t st)

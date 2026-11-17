@@ -15,6 +15,10 @@
 #define I2C_TIMEOUT_MS 1000
 #define I2C_CHUNK      256
 
+/* main 里 i2c_bus.c 提供强符号；未链接时为空操作 */
+void __attribute__((weak)) i2c_bus_lock(void) {}
+void __attribute__((weak)) i2c_bus_unlock(void) {}
+
 static int32_t esp_get_tick(void)
 {
     return (int32_t)(esp_timer_get_time() / 1000LL);
@@ -25,6 +29,7 @@ static int32_t esp_i2c_write(uint16_t address_8bit, uint16_t reg, uint8_t *data,
     if (!data && size) {
         return 1;
     }
+    i2c_bus_lock();
     uint8_t addr7 = (uint8_t)(address_8bit >> 1);
     uint16_t offset = 0;
     while (offset < size || (size == 0 && offset == 0)) {
@@ -49,6 +54,7 @@ static int32_t esp_i2c_write(uint16_t address_8bit, uint16_t reg, uint8_t *data,
         esp_err_t err = i2c_master_cmd_begin(VL53L5CX_I2C_PORT, cmd, pdMS_TO_TICKS(I2C_TIMEOUT_MS));
         i2c_cmd_link_delete(cmd);
         if (err != ESP_OK) {
+            i2c_bus_unlock();
             return (int32_t)err;
         }
         offset = (uint16_t)(offset + chunk);
@@ -56,6 +62,7 @@ static int32_t esp_i2c_write(uint16_t address_8bit, uint16_t reg, uint8_t *data,
             break;
         }
     }
+    i2c_bus_unlock();
     return 0;
 }
 
@@ -64,6 +71,7 @@ static int32_t esp_i2c_read(uint16_t address_8bit, uint16_t reg, uint8_t *data, 
     if (!data || size == 0) {
         return 1;
     }
+    i2c_bus_lock();
     uint8_t addr7 = (uint8_t)(address_8bit >> 1);
     uint16_t offset = 0;
     while (offset < size) {
@@ -91,10 +99,12 @@ static int32_t esp_i2c_read(uint16_t address_8bit, uint16_t reg, uint8_t *data, 
         esp_err_t err = i2c_master_cmd_begin(VL53L5CX_I2C_PORT, cmd, pdMS_TO_TICKS(I2C_TIMEOUT_MS));
         i2c_cmd_link_delete(cmd);
         if (err != ESP_OK) {
+            i2c_bus_unlock();
             return (int32_t)err;
         }
         offset = (uint16_t)(offset + chunk);
     }
+    i2c_bus_unlock();
     return 0;
 }
 

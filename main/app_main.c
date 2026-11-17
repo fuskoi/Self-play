@@ -24,8 +24,8 @@ void tasks_start_all(void)
     xTaskCreate(cam_task, "cam", 4096, NULL, 4, NULL);
     xTaskCreate(count_task, "count", 3072, NULL, 5, NULL);
     xTaskCreate(ui_task, "ui", 3072, NULL, 3, NULL);
-    xTaskCreate(ble_task, "ble", 4096, NULL, 3, NULL);
-    xTaskCreate(wifi_mqtt_task, "wifi", 6144, NULL, 3, NULL);
+    xTaskCreate(ble_task, "ble", 6144, NULL, 3, NULL);
+    xTaskCreate(wifi_mqtt_task, "wifi", 8192, NULL, 3, NULL);
     xTaskCreate(lte_task, "lte", 4096, NULL, 3, NULL);
     xTaskCreate(power_task, "power", 3072, NULL, 4, NULL);
     xTaskCreate(telemetry_task, "telem", 3072, NULL, 3, NULL);
@@ -52,7 +52,7 @@ void app_main(void)
     ESP_ERROR_CHECK(board_io_init());
     ESP_ERROR_CHECK(battery_init());
     ESP_ERROR_CHECK(tof_init());
-    ESP_ERROR_CHECK(cam_init());
+    ESP_ERROR_CHECK(app_cam_init());
     ESP_ERROR_CHECK(oled_init());
 
     /* 恢复日累计 */

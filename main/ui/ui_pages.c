@@ -17,6 +17,7 @@ void ui_render_main(void)
     if (nm == NET_MODE_WIFI) net = "wifi";
     else if (nm == NET_MODE_LTE) net = "lte";
 
+    /* 主页：进/出/在场；底栏：电量/网络/告警（同帧刷新） */
     oled_show_main(in_c, out_c, occ);
     oled_show_status(bat, net, alarm);
 }

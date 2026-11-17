@@ -1,4 +1,8 @@
 #include "net_proto.h"
+#include "drivers.h"
+#include "wifi_mqtt.h"
+#include "ble_svc.h"
+#include "app_config.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -16,15 +20,19 @@ void mqtt_route_set_ble_connected(bool connected) { s_ble = connected; }
 
 void mqtt_route_notify_ble(const char *json)
 {
-    if (s_ble && json) {
-        ESP_LOGI(TAG, "BLE notify: %s", json);
-        /* 待办：在蓝牙任务中真正发送 GATT 通知 */
+    if (!json) {
+        return;
+    }
+    if (ble_notify_telemetry(json) != ESP_OK) {
+        ESP_LOGD(TAG, "BLE notify skip");
     }
 }
 
 void mqtt_route_publish(const char *json)
 {
-    if (!json) return;
+    if (!json) {
+        return;
+    }
     app_state_t *st = app_state_get();
 
     if (s_ble) {
@@ -36,19 +44,29 @@ void mqtt_route_publish(const char *json)
     net_mode_t mode = st->net_mode;
     app_state_unlock();
 
-    if (mode == NET_MODE_WIFI) use_wifi = s_wifi;
-    else if (mode == NET_MODE_LTE) use_lte = s_lte;
-    else {
-        if (s_wifi) use_wifi = true;
-        else if (s_lte) use_lte = true;
+    if (mode == NET_MODE_WIFI) {
+        use_wifi = s_wifi;
+    } else if (mode == NET_MODE_LTE) {
+        use_lte = s_lte;
+    } else {
+        if (s_wifi) {
+            use_wifi = true;
+        } else if (s_lte) {
+            use_lte = true;
+        }
     }
 
     if (use_wifi) {
-        ESP_LOGI(TAG, "WiFi MQTT pub: %s", json);
-        /* 实际发布应由 Wi‑Fi MQTT 任务完成；此处先打日志，后续扩展 */
+        if (wifi_mqtt_publish_telemetry(json) != ESP_OK) {
+            ESP_LOGW(TAG, "WiFi MQTT pub failed");
+            s_wifi = false;
+        }
     } else if (use_lte) {
-        ESP_LOGI(TAG, "LTE MQTT pub: %s", json);
-    } else {
-        ESP_LOGW(TAG, "no uplink ready, drop: %s", json);
+        if (lte_mqtt_publish(APP_LTE_MQTT_TOPIC_TELEMETRY, json) != ESP_OK) {
+            ESP_LOGW(TAG, "LTE MQTT pub failed");
+            s_lte = false;
+        }
+    } else if (!s_ble) {
+        ESP_LOGD(TAG, "no uplink ready");
     }
 }

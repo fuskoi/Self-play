@@ -25,6 +25,7 @@ esp_err_t board_io_init(void)
     ESP_ERROR_CHECK(gpio_config(&in));
 
     gpio_set_level(PIN_LTE_PWR_EN, 0);
+    gpio_set_level(PIN_LTE_PWRKEY, 1); /* 空闲释放；开机时再拉低脉冲 */
     gpio_set_level(PIN_CAM_PWR_EN, 0);
     gpio_set_level(PIN_BUZZER, 0);
     gpio_set_level(PIN_TOF_A_XSHUT, 1);

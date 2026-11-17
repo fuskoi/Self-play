@@ -16,9 +16,9 @@ void cam_task(void *arg)
 
         uint8_t *gray = NULL;
         int w = 0, h = 0;
-        if (cam_capture_gray(&gray, &w, &h) == ESP_OK) {
+        if (app_cam_capture_gray(&gray, &w, &h) == ESP_OK) {
             int hint = algo_cam_count_people(gray, w, h);
-            cam_release(gray);
+            app_cam_release(gray);
             ESP_LOGI(TAG, "person_hint=%d", hint);
             if (hint >= 2) {
                 count_msg_t msg = { .delta_in = 0, .delta_out = 0, .person_hint = hint };

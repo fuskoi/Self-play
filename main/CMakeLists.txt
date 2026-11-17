@@ -11,6 +11,7 @@ idf_component_register(
         "drivers/oled_ssd1306.c"
         "drivers/lte_air780e.c"
         "drivers/board_io.c"
+        "drivers/i2c_bus.c"
         "tasks/tof_task.c"
         "tasks/cam_task.c"
         "tasks/count_task.c"
@@ -42,6 +43,8 @@ idf_component_register(
         esp_timer
         mqtt
         bt
+        espressif__cjson
         freertos
         vl53l5cx
+        esp32-camera
 )
