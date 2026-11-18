@@ -10,10 +10,10 @@
 /*
  * GC0308（GalaxyCore VGA）触发式采集
  * 手册摘要：
- *   - 供电 2.7～3.3 V（典型 2.8 V），本板经 CAM_PWR_EN 切 3.3 V
- *   - SCCB 写地址 0x42、读 0x43；Chip_ID(P0:0x00)=0x9b
- *   - 输出 YCbCr422 / RGB565 / Bayer；人数辅助用灰度 QQVGA
- *   - 平时断电；多人嫌疑时上电→采 1～数帧→断电
+ *   - 供电：CAM_CTRL 切 2V8/1V5 LDO；IOVDD=2.8 V
+ *   - SCCB 写 0x42 / 读 0x43；Chip_ID=0x9b
+ *   - 8bit DVP 用 Y2..Y9；人数辅助灰度 QQVGA
+ *   - 平时断电；多人嫌疑时上电→采帧→断电
  */
 
 static const char *TAG = "cam";

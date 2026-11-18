@@ -147,7 +147,9 @@ esp_err_t lte_power_off(void)
     }
     /* 尝试软关机；失败则直接断电 */
     at_cmd("AT+CPOWD=1", "NORMAL POWER DOWN", 5000);
-    gpio_set_level(PIN_LTE_PWRKEY, 1);
+#if PIN_LTE_RST >= 0
+    gpio_set_level(PIN_LTE_RST, 1);
+#endif
     board_lte_power(false);
     s_powered = false;
     ESP_LOGI(TAG, "powered off");
@@ -173,16 +175,14 @@ esp_err_t lte_power_on_sequence(void)
     board_lte_power(true);
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    /*
-     * PWRKEY：合宙模组需拉低约 1s 开机。
-     * 银尔达 M100M 部分板子上电自启，脉冲仍无害；若改接 RST，
-     * 可把 PIN_LTE_PWRKEY 接到 RST 并改为短低脉冲复位。
-     */
-    gpio_set_level(PIN_LTE_PWRKEY, 1);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    gpio_set_level(PIN_LTE_PWRKEY, 0);
-    vTaskDelay(pdMS_TO_TICKS(1200));
-    gpio_set_level(PIN_LTE_PWRKEY, 1);
+    /* 无 MCU 接 RST 时仅靠 EN 上电；若有 RST 则短低脉冲 */
+#if PIN_LTE_RST >= 0
+    gpio_set_level(PIN_LTE_RST, 1);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    gpio_set_level(PIN_LTE_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(PIN_LTE_RST, 1);
+#endif
 
     /* 等待模组启动 */
     vTaskDelay(pdMS_TO_TICKS(2500));

@@ -3,9 +3,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_err.h"
+#include "hal/adc_types.h"
 #include "app_config.h"
 
 esp_err_t board_io_init(void);
+esp_err_t board_adc_read(adc_channel_t ch, int *raw);
 bool      board_key1_pressed(void);
 bool      board_key2_pressed(void);
 void      board_buzzer_beep(int pattern);

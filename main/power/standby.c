@@ -40,8 +40,8 @@ void standby_service(void)
     board_cam_power(false);
     tof_enter_autonomous_irq();
 
+    /* 按键为 ADC 分压，无法 GPIO 唤醒；靠 ToF INT / 复位 */
     gpio_wakeup_enable(PIN_TOF_INT, GPIO_INTR_LOW_LEVEL);
-    gpio_wakeup_enable(PIN_KEY1, GPIO_INTR_LOW_LEVEL);
     esp_sleep_enable_gpio_wakeup();
 
     esp_light_sleep_start();
