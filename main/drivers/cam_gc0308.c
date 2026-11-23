@@ -131,11 +131,21 @@ static esp_err_t stub_gray(uint8_t **out_buf, int *w, int *h)
 
 esp_err_t app_cam_init(void)
 {
-    /* 启动时不常开相机；仅探测日志 */
-    ESP_LOGI(TAG, "GC0308 ready (trigger mode, PWR_EN=%d)", PIN_CAM_PWR_EN);
-    board_cam_power(false);
     s_driver_up = false;
     s_hw_ok = false;
+    if (PIN_CAM_XCLK < 0) {
+        ESP_LOGI(TAG, "cam disabled (no pins) — stub frames");
+        return ESP_OK;
+    }
+    /* 上电探测一次，确认板载/外接传感器；随后 deinit，多人嫌疑再开 */
+    if (cam_hw_start() == ESP_OK) {
+        ESP_LOGI(TAG, "cam probe OK (trigger mode, PWR_EN=%d)", PIN_CAM_PWR_EN);
+        cam_hw_stop();
+        s_hw_ok = true; /* 记住曾探测成功，便于后续 capture */
+    } else {
+        ESP_LOGW(TAG, "cam probe fail — stub frames");
+    }
+    board_cam_power(false);
     return ESP_OK;
 }
 

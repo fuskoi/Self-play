@@ -3,25 +3,22 @@
 #include "hal/adc_types.h"
 
 /*
- * ESP32-S3-CAM / DevKit 杜邦飞线联调引脚
+ * ESP32-S3-CAM 整机联调引脚（BOARD_S3_BRINGUP）
  *
- * 目标：在现成 S3 板上先跑通 ToF×2 + OLED + 算法/联网；
- * 板载摄像头脚位与自研 GC0308 不同，默认不接 CAM（走 stub）。
+ * 相机：按常见 Freenove / 同类 S3-CAM 板载 DVP（与自研板 custom 脚不同）
+ * ToF+OLED：飞线到空闲脚，避开摄像头占用的 4～18
  *
- * 默认按「避开常见 CAM 占用脚」选了一组；若与你的板子冲突，
- * 只改本文件，勿改 custom。杜邦线按丝印核对后再焊。
+ * 注意：板载 CAM 占用 GPIO16/17/18，4G 改到 41/42/47，勿再占 16～18。
  *
- * 推荐接线（3V3 共地）：
+ * 飞线：
  *   OLED/ToF SDA -> GPIO21    SCL -> GPIO14
- *   ToF-A LPN/XSHUT -> GPIO38
- *   ToF-B LPN/XSHUT -> GPIO39
- *   ToF INT（两路线或）-> GPIO40
- *   蜂鸣器 EN -> GPIO1（可选）
- *
- * 控制台请用 USB-Serial/JTAG，避免占用 UART0 的 43/44。
+ *   ToF-A XSHUT  -> GPIO38
+ *   ToF-B XSHUT  -> GPIO39
+ *   ToF INT      -> GPIO40
+ *   蜂鸣器       -> GPIO1
  */
 
-/* I²C0：双 ToF + OLED（杜邦） */
+/* I²C0：双 ToF + OLED */
 #define PIN_I2C_SDA           21
 #define PIN_I2C_SCL           14
 
@@ -30,30 +27,31 @@
 #define PIN_TOF_B_XSHUT       39
 #define PIN_TOF_INT           40
 
-/* 4G：有模组再飞线；暂无则保持脚号即可 */
-#define PIN_LTE_TX            17
-#define PIN_LTE_RX            16
-#define PIN_LTE_PWR_EN        18
+/* 4G：避开板载 CAM 的 16/17/18 */
+#define PIN_LTE_TX            41  /* ESP→模组 */
+#define PIN_LTE_RX            42  /* 模组→ESP */
+#define PIN_LTE_PWR_EN        47
 #define PIN_LTE_RST           (-1)
 #define PIN_LTE_PWRKEY        PIN_LTE_RST
 
-/* 开发板阶段默认不控相机电源；init 失败会走 stub */
+/* 板载 CAM 常电；无独立 CAM_CTRL */
 #define PIN_CAM_PWR_EN        (-1)
 
-#define PIN_CAM_XCLK          (-1)
-#define PIN_CAM_PCLK          (-1)
-#define PIN_CAM_VSYNC         (-1)
-#define PIN_CAM_HREF          (-1)
-#define PIN_CAM_SCCB_SDA      (-1)
-#define PIN_CAM_SCCB_SCL      (-1)
-#define PIN_CAM_D0            (-1)
-#define PIN_CAM_D1            (-1)
-#define PIN_CAM_D2            (-1)
-#define PIN_CAM_D3            (-1)
-#define PIN_CAM_D4            (-1)
-#define PIN_CAM_D5            (-1)
-#define PIN_CAM_D6            (-1)
-#define PIN_CAM_D7            (-1)
+/* Freenove ESP32-S3-CAM 类 DVP（Y2..Y9 = D0..D7） */
+#define PIN_CAM_XCLK          15
+#define PIN_CAM_PCLK          13
+#define PIN_CAM_VSYNC         6
+#define PIN_CAM_HREF          7
+#define PIN_CAM_SCCB_SDA      4
+#define PIN_CAM_SCCB_SCL      5
+#define PIN_CAM_D0            11  /* Y2 */
+#define PIN_CAM_D1            9   /* Y3 */
+#define PIN_CAM_D2            8   /* Y4 */
+#define PIN_CAM_D3            10  /* Y5 */
+#define PIN_CAM_D4            12  /* Y6 */
+#define PIN_CAM_D5            18  /* Y7 */
+#define PIN_CAM_D6            17  /* Y8 */
+#define PIN_CAM_D7            16  /* Y9 */
 #define PIN_CAM_PWDN          (-1)
 #define PIN_CAM_RESET         (-1)
 
