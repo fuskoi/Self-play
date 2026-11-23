@@ -1,7 +1,6 @@
 #include "drivers.h"
 #include "board_pins.h"
 #include "i2c_bus.h"
-#include "driver/i2c.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -27,7 +26,9 @@ static const char *TAG = "tof";
 static bool s_irq;
 static bool s_sim;          /* true=仿真；默认先尝试硬件，失败再回退 */
 static bool s_sim_force;    /* 串口命令强制仿真，跳过硬件 */
-static bool s_hw_ok;
+static bool s_hw_ok;        /* A 或 B 至少一颗可用 */
+static bool s_hw_a;
+static bool s_hw_b;
 static bool s_ranging;
 
 static VL53L5CX_Configuration s_dev_a;
@@ -132,7 +133,11 @@ static uint8_t configure_sensor(VL53L5CX_Configuration *dev, const char *name)
 
 static esp_err_t hw_init_dual(void)
 {
-    /* 双传感器：先只拉起 A，改址后再拉起 B（默认地址） */
+    /* 双传感器：先只拉起 A，改址后再拉起 B（默认地址）。
+     * 单颗联调：仅 A 或仅 B 成功也算硬件可用，不再整组退仿真。 */
+    s_hw_a = false;
+    s_hw_b = false;
+
     xshut_set(PIN_TOF_A_XSHUT, 0);
     xshut_set(PIN_TOF_B_XSHUT, 0);
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -143,11 +148,9 @@ static esp_err_t hw_init_dual(void)
     memset(&s_dev_a, 0, sizeof(s_dev_a));
     vl53l5cx_esp_platform_init(&s_dev_a.platform, TOF_ADDR_DEFAULT_8BIT);
     if (vl53l5cx_set_i2c_address(&s_dev_a, TOF_ADDR_A_8BIT) != VL53L5CX_STATUS_OK) {
-        ESP_LOGE(TAG, "A set address failed");
-        return ESP_FAIL;
-    }
-    if (configure_sensor(&s_dev_a, "ToF-A") != VL53L5CX_STATUS_OK) {
-        return ESP_FAIL;
+        ESP_LOGW(TAG, "A set address failed (no sensor on XSHUT=A?)");
+    } else if (configure_sensor(&s_dev_a, "ToF-A") == VL53L5CX_STATUS_OK) {
+        s_hw_a = true;
     }
 
     xshut_set(PIN_TOF_B_XSHUT, 1);
@@ -155,18 +158,30 @@ static esp_err_t hw_init_dual(void)
 
     memset(&s_dev_b, 0, sizeof(s_dev_b));
     vl53l5cx_esp_platform_init(&s_dev_b.platform, TOF_ADDR_B_8BIT);
-    if (configure_sensor(&s_dev_b, "ToF-B") != VL53L5CX_STATUS_OK) {
+    if (configure_sensor(&s_dev_b, "ToF-B") == VL53L5CX_STATUS_OK) {
+        s_hw_b = true;
+    } else {
+        ESP_LOGW(TAG, "ToF-B not present — single-sensor OK for bring-up");
+        xshut_set(PIN_TOF_B_XSHUT, 0);
+    }
+
+    if (!s_hw_a && !s_hw_b) {
         return ESP_FAIL;
     }
 
     uint8_t st = 0;
-    st |= vl53l5cx_start_ranging(&s_dev_a);
-    st |= vl53l5cx_start_ranging(&s_dev_b);
+    if (s_hw_a) {
+        st |= vl53l5cx_start_ranging(&s_dev_a);
+    }
+    if (s_hw_b) {
+        st |= vl53l5cx_start_ranging(&s_dev_b);
+    }
     if (st != VL53L5CX_STATUS_OK) {
         ESP_LOGE(TAG, "start_ranging failed (%u)", st);
         return ESP_FAIL;
     }
     s_ranging = true;
+    ESP_LOGI(TAG, "tof HW ready A=%d B=%d", (int)s_hw_a, (int)s_hw_b);
     return ESP_OK;
 }
 
@@ -209,7 +224,7 @@ esp_err_t tof_init(void)
 
     s_hw_ok = true;
     s_sim = false;
-    ESP_LOGI(TAG, "tof init (HW dual VL53L5CX)");
+    ESP_LOGI(TAG, "tof init (HW VL53L5CX A=%d B=%d)", (int)s_hw_a, (int)s_hw_b);
     return ESP_OK;
 }
 
@@ -227,23 +242,30 @@ esp_err_t tof_read_both(uint16_t a[APP_TOF_ZONE_N], uint16_t b[APP_TOF_ZONE_N])
     uint8_t ready = 0;
     uint8_t st;
 
-    st = vl53l5cx_check_data_ready(&s_dev_a, &ready);
-    if (st == VL53L5CX_STATUS_OK && ready) {
-        if (vl53l5cx_get_ranging_data(&s_dev_a, &s_res_a) == VL53L5CX_STATUS_OK) {
-            results_to_zones(&s_res_a, a);
+    if (s_hw_a) {
+        st = vl53l5cx_check_data_ready(&s_dev_a, &ready);
+        if (st == VL53L5CX_STATUS_OK && ready) {
+            if (vl53l5cx_get_ranging_data(&s_dev_a, &s_res_a) == VL53L5CX_STATUS_OK) {
+                results_to_zones(&s_res_a, a);
+            } else {
+                fill_const(a, TOF_INVALID_MM);
+            }
         } else {
             fill_const(a, TOF_INVALID_MM);
         }
     } else {
-        /* 尚无新帧：填无效距离，避免阻塞测距任务 */
         fill_const(a, TOF_INVALID_MM);
     }
 
-    ready = 0;
-    st = vl53l5cx_check_data_ready(&s_dev_b, &ready);
-    if (st == VL53L5CX_STATUS_OK && ready) {
-        if (vl53l5cx_get_ranging_data(&s_dev_b, &s_res_b) == VL53L5CX_STATUS_OK) {
-            results_to_zones(&s_res_b, b);
+    if (s_hw_b) {
+        ready = 0;
+        st = vl53l5cx_check_data_ready(&s_dev_b, &ready);
+        if (st == VL53L5CX_STATUS_OK && ready) {
+            if (vl53l5cx_get_ranging_data(&s_dev_b, &s_res_b) == VL53L5CX_STATUS_OK) {
+                results_to_zones(&s_res_b, b);
+            } else {
+                fill_const(b, TOF_INVALID_MM);
+            }
         } else {
             fill_const(b, TOF_INVALID_MM);
         }
@@ -262,18 +284,17 @@ esp_err_t tof_enter_autonomous_irq(void)
     }
 
     if (s_ranging) {
-        vl53l5cx_stop_ranging(&s_dev_a);
-        vl53l5cx_stop_ranging(&s_dev_b);
+        if (s_hw_a) {
+            vl53l5cx_stop_ranging(&s_dev_a);
+        }
+        if (s_hw_b) {
+            vl53l5cx_stop_ranging(&s_dev_b);
+        }
         s_ranging = false;
     }
 
     /* 低帧率 + 距离阈值中断：任一区出现较近目标则拉低中断脚 */
     VL53L5CX_DetectionThresholds thresholds[VL53L5CX_NB_THRESHOLDS];
-    memset(thresholds, 0, sizeof(thresholds));
-    thresholds[0].zone_num = VL53L5CX_LAST_THRESHOLD; /* 先清 */
-    vl53l5cx_set_detection_thresholds_enable(&s_dev_a, 0);
-    vl53l5cx_set_detection_thresholds_enable(&s_dev_b, 0);
-
     memset(thresholds, 0, sizeof(thresholds));
     for (int i = 0; i < (VL53L5CX_NB_THRESHOLDS - 1); i++) {
         thresholds[i].zone_num = (uint8_t)i;
@@ -285,14 +306,17 @@ esp_err_t tof_enter_autonomous_irq(void)
     }
     thresholds[VL53L5CX_NB_THRESHOLDS - 1].zone_num = VL53L5CX_LAST_THRESHOLD;
 
-    vl53l5cx_set_detection_thresholds(&s_dev_a, thresholds);
-    vl53l5cx_set_detection_thresholds_enable(&s_dev_a, 1);
-    vl53l5cx_set_ranging_mode(&s_dev_a, VL53L5CX_RANGING_MODE_AUTONOMOUS);
-    vl53l5cx_set_ranging_frequency_hz(&s_dev_a, TOF_HZ_STANDBY);
-    vl53l5cx_start_ranging(&s_dev_a);
-
-    /* B 进入休眠省电，唤醒主要靠 A 的中断线；若两路中断线或，也可同样配置 B */
-    vl53l5cx_set_power_mode(&s_dev_b, VL53L5CX_POWER_MODE_SLEEP);
+    if (s_hw_a) {
+        vl53l5cx_set_detection_thresholds_enable(&s_dev_a, 0);
+        vl53l5cx_set_detection_thresholds(&s_dev_a, thresholds);
+        vl53l5cx_set_detection_thresholds_enable(&s_dev_a, 1);
+        vl53l5cx_set_ranging_mode(&s_dev_a, VL53L5CX_RANGING_MODE_AUTONOMOUS);
+        vl53l5cx_set_ranging_frequency_hz(&s_dev_a, TOF_HZ_STANDBY);
+        vl53l5cx_start_ranging(&s_dev_a);
+    }
+    if (s_hw_b) {
+        vl53l5cx_set_power_mode(&s_dev_b, VL53L5CX_POWER_MODE_SLEEP);
+    }
 
     s_ranging = true;
     return ESP_OK;
@@ -306,21 +330,29 @@ esp_err_t tof_enter_active_mode(void)
     }
 
     if (s_ranging) {
-        vl53l5cx_stop_ranging(&s_dev_a);
-        vl53l5cx_stop_ranging(&s_dev_b);
+        if (s_hw_a) {
+            vl53l5cx_stop_ranging(&s_dev_a);
+        }
+        if (s_hw_b) {
+            vl53l5cx_stop_ranging(&s_dev_b);
+        }
         s_ranging = false;
     }
 
-    vl53l5cx_set_detection_thresholds_enable(&s_dev_a, 0);
-    vl53l5cx_set_power_mode(&s_dev_b, VL53L5CX_POWER_MODE_WAKEUP);
-    vl53l5cx_set_ranging_mode(&s_dev_a, VL53L5CX_RANGING_MODE_CONTINUOUS);
-    vl53l5cx_set_ranging_mode(&s_dev_b, VL53L5CX_RANGING_MODE_CONTINUOUS);
-    vl53l5cx_set_ranging_frequency_hz(&s_dev_a, TOF_HZ_ACTIVE);
-    vl53l5cx_set_ranging_frequency_hz(&s_dev_b, TOF_HZ_ACTIVE);
-    vl53l5cx_set_resolution(&s_dev_a, VL53L5CX_RESOLUTION_8X8);
-    vl53l5cx_set_resolution(&s_dev_b, VL53L5CX_RESOLUTION_8X8);
-    vl53l5cx_start_ranging(&s_dev_a);
-    vl53l5cx_start_ranging(&s_dev_b);
+    if (s_hw_a) {
+        vl53l5cx_set_detection_thresholds_enable(&s_dev_a, 0);
+        vl53l5cx_set_ranging_mode(&s_dev_a, VL53L5CX_RANGING_MODE_CONTINUOUS);
+        vl53l5cx_set_ranging_frequency_hz(&s_dev_a, TOF_HZ_ACTIVE);
+        vl53l5cx_set_resolution(&s_dev_a, VL53L5CX_RESOLUTION_8X8);
+        vl53l5cx_start_ranging(&s_dev_a);
+    }
+    if (s_hw_b) {
+        vl53l5cx_set_power_mode(&s_dev_b, VL53L5CX_POWER_MODE_WAKEUP);
+        vl53l5cx_set_ranging_mode(&s_dev_b, VL53L5CX_RANGING_MODE_CONTINUOUS);
+        vl53l5cx_set_ranging_frequency_hz(&s_dev_b, TOF_HZ_ACTIVE);
+        vl53l5cx_set_resolution(&s_dev_b, VL53L5CX_RESOLUTION_8X8);
+        vl53l5cx_start_ranging(&s_dev_b);
+    }
     s_ranging = true;
     return ESP_OK;
 }

@@ -4,6 +4,7 @@
 #include "esp_netif.h"
 #include "esp_log.h"
 #include "app_config.h"
+#include "board_pins.h"
 #include "drivers.h"
 #include "power_mgr.h"
 #include "net_proto.h"
@@ -35,12 +36,18 @@ void tasks_start_all(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "ridership boot");
+#if defined(BOARD_S3_BRINGUP) && BOARD_S3_BRINGUP
+    ESP_LOGI(TAG, "board profile: S3_BRINGUP (devkit Dupont)");
+#else
+    ESP_LOGI(TAG, "board profile: CUSTOM (docs/4.pdf)");
+#endif
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ESP_ERROR_CHECK(nvs_flash_init());
     }
+    ESP_LOGI(TAG, "nvs ok");
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -49,12 +56,18 @@ void app_main(void)
     s_events = xEventGroupCreate();
     s_count_q = xQueueCreate(16, sizeof(count_msg_t));
     mqtt_route_init();
+    ESP_LOGI(TAG, "state ok");
 
     ESP_ERROR_CHECK(board_io_init());
+    ESP_LOGI(TAG, "board_io ok");
     ESP_ERROR_CHECK(battery_init());
+    ESP_LOGI(TAG, "battery ok");
     ESP_ERROR_CHECK(tof_init());
+    ESP_LOGI(TAG, "tof ok");
     ESP_ERROR_CHECK(app_cam_init());
+    ESP_LOGI(TAG, "cam ok");
     ESP_ERROR_CHECK(oled_init());
+    ESP_LOGI(TAG, "oled ok");
 
     tasks_start_all();
 

@@ -1,3 +1,12 @@
+# 开发板飞线：idf.py build -DBOARD_S3_BRINGUP=1
+# 或 set(BOARD_S3_BRINGUP 1) 后重新配置
+if(BOARD_S3_BRINGUP)
+    idf_build_set_property(COMPILE_DEFINITIONS "BOARD_S3_BRINGUP=1" APPEND)
+    message(STATUS "Board profile: S3 bring-up (Dupont)")
+else()
+    message(STATUS "Board profile: custom schematic (docs/4.pdf)")
+endif()
+
 idf_component_register(
     SRCS
         "app_main.c"

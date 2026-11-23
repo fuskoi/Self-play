@@ -15,10 +15,13 @@ void battery_set_sim_mv(uint16_t mv)
 
 esp_err_t battery_init(void)
 {
-    /* ADC 通道已在 board_io_init 配置 */
+#if PIN_BAT_ADC < 0
+    ESP_LOGI(TAG, "battery adc stub (no PIN_BAT_ADC on this board profile)");
+#else
     int raw = 0;
     bool ok = board_adc_read(BAT_ADC_CHANNEL, &raw) == ESP_OK;
     ESP_LOGI(TAG, "battery adc %s (GPIO%d)", ok ? "ok" : "stub", PIN_BAT_ADC);
+#endif
     return ESP_OK;
 }
 
@@ -27,6 +30,10 @@ uint16_t battery_read_mv(void)
     if (s_sim_mv > 0) {
         return s_sim_mv;
     }
+#if PIN_BAT_ADC < 0
+    /* 开发板未接电量分压：返回健康电压，避免误报低电 */
+    return 3900;
+#else
     int raw = 0;
     if (board_adc_read(BAT_ADC_CHANNEL, &raw) != ESP_OK) {
         return 3900;
@@ -40,6 +47,7 @@ uint16_t battery_read_mv(void)
         mv = 4200;
     }
     return (uint16_t)mv;
+#endif
 }
 
 uint8_t battery_percent(void)

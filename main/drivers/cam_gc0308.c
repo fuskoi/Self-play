@@ -62,6 +62,11 @@ static esp_err_t cam_hw_start(void)
     if (s_driver_up) {
         return ESP_OK;
     }
+    /* 开发板飞线阶段未接 GC0308 时脚为 -1，直接 stub */
+    if (PIN_CAM_XCLK < 0 || PIN_CAM_PCLK < 0) {
+        s_hw_ok = false;
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     board_cam_power(true);
     vTaskDelay(pdMS_TO_TICKS(80)); /* 供电/复位稳定 */
 

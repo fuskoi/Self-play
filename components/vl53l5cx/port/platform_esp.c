@@ -1,23 +1,38 @@
 /*******************************************************************************
- * VL53L5CX ULD 的 ESP-IDF I2C / 延时移植层
+ * VL53L5CX ULD 的 ESP-IDF I2C / 延时移植层（IDF v6 i2c_master）
+ * 实际总线收发由 main/drivers/i2c_bus.c 提供。
  ******************************************************************************/
 #include "platform.h"
-#include "driver/i2c.h"
+#include "esp_err.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-/* 须与 main/include/board_pins.h 中 I2C_PORT_NUM 一致 */
-#ifndef VL53L5CX_I2C_PORT
-#define VL53L5CX_I2C_PORT I2C_NUM_0
-#endif
+#include <string.h>
 
 #define I2C_TIMEOUT_MS 1000
 #define I2C_CHUNK      256
 
-/* main 里 i2c_bus.c 提供强符号；未链接时为空操作 */
-void __attribute__((weak)) i2c_bus_lock(void) {}
-void __attribute__((weak)) i2c_bus_unlock(void) {}
+/* 由 main 强符号实现；单独编译本组件时弱符号兜底失败 */
+esp_err_t __attribute__((weak)) i2c_bus_write(uint8_t addr7, const uint8_t *data, size_t len, int timeout_ms)
+{
+    (void)addr7;
+    (void)data;
+    (void)len;
+    (void)timeout_ms;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t __attribute__((weak)) i2c_bus_write_read(uint8_t addr7, const uint8_t *wdata, size_t wlen,
+                                                   uint8_t *rdata, size_t rlen, int timeout_ms)
+{
+    (void)addr7;
+    (void)wdata;
+    (void)wlen;
+    (void)rdata;
+    (void)rlen;
+    (void)timeout_ms;
+    return ESP_ERR_NOT_SUPPORTED;
+}
 
 static int32_t esp_get_tick(void)
 {
@@ -29,7 +44,6 @@ static int32_t esp_i2c_write(uint16_t address_8bit, uint16_t reg, uint8_t *data,
     if (!data && size) {
         return 1;
     }
-    i2c_bus_lock();
     uint8_t addr7 = (uint8_t)(address_8bit >> 1);
     uint16_t offset = 0;
     while (offset < size || (size == 0 && offset == 0)) {
@@ -39,22 +53,14 @@ static int32_t esp_i2c_write(uint16_t address_8bit, uint16_t reg, uint8_t *data,
         }
         uint16_t reg_cur = (uint16_t)(reg + offset);
 
-        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-        if (!cmd) {
-            return 1;
-        }
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (uint8_t)((addr7 << 1) | I2C_MASTER_WRITE), true);
-        i2c_master_write_byte(cmd, (uint8_t)(reg_cur >> 8), true);
-        i2c_master_write_byte(cmd, (uint8_t)(reg_cur & 0xFF), true);
+        uint8_t buf[2 + I2C_CHUNK];
+        buf[0] = (uint8_t)(reg_cur >> 8);
+        buf[1] = (uint8_t)(reg_cur & 0xFF);
         if (chunk) {
-            i2c_master_write(cmd, data + offset, chunk, true);
+            memcpy(buf + 2, data + offset, chunk);
         }
-        i2c_master_stop(cmd);
-        esp_err_t err = i2c_master_cmd_begin(VL53L5CX_I2C_PORT, cmd, pdMS_TO_TICKS(I2C_TIMEOUT_MS));
-        i2c_cmd_link_delete(cmd);
+        esp_err_t err = i2c_bus_write(addr7, buf, (size_t)(2 + chunk), I2C_TIMEOUT_MS);
         if (err != ESP_OK) {
-            i2c_bus_unlock();
             return (int32_t)err;
         }
         offset = (uint16_t)(offset + chunk);
@@ -62,7 +68,6 @@ static int32_t esp_i2c_write(uint16_t address_8bit, uint16_t reg, uint8_t *data,
             break;
         }
     }
-    i2c_bus_unlock();
     return 0;
 }
 
@@ -71,7 +76,6 @@ static int32_t esp_i2c_read(uint16_t address_8bit, uint16_t reg, uint8_t *data, 
     if (!data || size == 0) {
         return 1;
     }
-    i2c_bus_lock();
     uint8_t addr7 = (uint8_t)(address_8bit >> 1);
     uint16_t offset = 0;
     while (offset < size) {
@@ -80,31 +84,16 @@ static int32_t esp_i2c_read(uint16_t address_8bit, uint16_t reg, uint8_t *data, 
             chunk = I2C_CHUNK;
         }
         uint16_t reg_cur = (uint16_t)(reg + offset);
-
-        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-        if (!cmd) {
-            return 1;
-        }
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (uint8_t)((addr7 << 1) | I2C_MASTER_WRITE), true);
-        i2c_master_write_byte(cmd, (uint8_t)(reg_cur >> 8), true);
-        i2c_master_write_byte(cmd, (uint8_t)(reg_cur & 0xFF), true);
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (uint8_t)((addr7 << 1) | I2C_MASTER_READ), true);
-        if (chunk > 1) {
-            i2c_master_read(cmd, data + offset, chunk - 1, I2C_MASTER_ACK);
-        }
-        i2c_master_read_byte(cmd, data + offset + chunk - 1, I2C_MASTER_NACK);
-        i2c_master_stop(cmd);
-        esp_err_t err = i2c_master_cmd_begin(VL53L5CX_I2C_PORT, cmd, pdMS_TO_TICKS(I2C_TIMEOUT_MS));
-        i2c_cmd_link_delete(cmd);
+        uint8_t reg_bytes[2] = {
+            (uint8_t)(reg_cur >> 8),
+            (uint8_t)(reg_cur & 0xFF),
+        };
+        esp_err_t err = i2c_bus_write_read(addr7, reg_bytes, 2, data + offset, chunk, I2C_TIMEOUT_MS);
         if (err != ESP_OK) {
-            i2c_bus_unlock();
             return (int32_t)err;
         }
         offset = (uint16_t)(offset + chunk);
     }
-    i2c_bus_unlock();
     return 0;
 }
 
@@ -128,7 +117,6 @@ uint8_t WrByte(VL53L5CX_Platform *p_platform, uint16_t RegisterAdress, uint8_t v
 
 uint8_t WrMulti(VL53L5CX_Platform *p_platform, uint16_t RegisterAdress, uint8_t *p_values, uint32_t size)
 {
-    /* API 理论上可能传入 >65535；由下方分片 + esp_i2c_write 内部再切块 */
     while (size > 0) {
         uint16_t chunk = (size > 65535U) ? 65535U : (uint16_t)size;
         int32_t st = p_platform->Write(p_platform->address, RegisterAdress, p_values, chunk);

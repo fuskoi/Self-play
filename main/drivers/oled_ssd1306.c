@@ -1,7 +1,6 @@
 #include "drivers.h"
 #include "board_pins.h"
 #include "i2c_bus.h"
-#include "driver/i2c.h"
 #include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
@@ -12,7 +11,7 @@
  *   - 从地址常见 0x3C（SA0=0）或 0x3D（SA0=1）
  *   - 控制字节：0x00=命令流，0x40=显存数据
  *   - 本驱动：128×64，水平寻址，帧缓冲整屏刷新
- * 接线：SDA=GPIO8，SCL=GPIO9，与双 ToF 共总线
+ * 接线：SDA/SCL 见 board_pins.h（与双 ToF 共 I2C0）
  */
 
 static const char *TAG = "oled";
@@ -22,7 +21,7 @@ static const char *TAG = "oled";
 #define OLED_PAGES        (OLED_H / 8)
 #define OLED_ADDR_PRIMARY 0x3C
 #define OLED_ADDR_ALT     0x3D
-#define OLED_I2C_TIMEOUT  pdMS_TO_TICKS(100)
+#define OLED_I2C_TIMEOUT_MS 100
 
 static uint8_t s_addr = OLED_ADDR_PRIMARY;
 static uint8_t s_fb[OLED_W * OLED_PAGES];
@@ -131,19 +130,7 @@ static const uint8_t s_font5x7[][5] = {
 
 static esp_err_t oled_i2c_write(const uint8_t *data, size_t len)
 {
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    if (!cmd) {
-        return ESP_ERR_NO_MEM;
-    }
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (uint8_t)((s_addr << 1) | I2C_MASTER_WRITE), true);
-    i2c_master_write(cmd, (uint8_t *)data, len, true);
-    i2c_master_stop(cmd);
-    i2c_bus_lock();
-    esp_err_t err = i2c_master_cmd_begin(I2C_PORT_NUM, cmd, OLED_I2C_TIMEOUT);
-    i2c_bus_unlock();
-    i2c_cmd_link_delete(cmd);
-    return err;
+    return i2c_bus_write(s_addr, data, len, OLED_I2C_TIMEOUT_MS);
 }
 
 static esp_err_t oled_cmd(uint8_t c)
